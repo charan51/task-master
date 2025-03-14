@@ -19,6 +19,25 @@ A cloud-based security solution using AI for threat detection.
 
 3. After the connection is established, the CodePipeline will automatically start building and deploying the application.
 
+## Triggering the Pipeline
+
+You can trigger the pipeline in multiple ways:
+
+1. **Automatic (GitHub)**:
+   - Make changes to your code
+   - Commit and push to the main branch
+   - Pipeline will trigger automatically
+
+2. **Manual (AWS Console)**:
+   - Go to AWS CodePipeline
+   - Select threat-detection-pipeline
+   - Click "Release change"
+
+3. **Using AWS CLI**:
+   ```bash
+   aws codepipeline start-pipeline-execution --name threat-detection-pipeline
+   ```
+
 ## Architecture
 
 - AWS CodePipeline for CI/CD

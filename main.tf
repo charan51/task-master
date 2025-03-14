@@ -2,18 +2,27 @@ provider "aws" {
   region = "us-west-2"  # Change this to your desired region
 }
 
+variable "aws_region" {
+  default = "us-west-2"
+}
+
+data "aws_caller_identity" "current" {}
+
 resource "aws_instance" "security_ai" {
   ami           = "ami-0735c191cf914754d" # Update with correct AMI ID
   instance_type = "t2.medium"
   vpc_security_group_ids = [aws_security_group.security_ai_sg.id]
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
   user_data = <<-EOF
               #!/bin/bash
               apt-get update -y
-              apt-get install -y docker.io
+              apt-get install -y docker.io awscli
               systemctl start docker
               systemctl enable docker
-              docker run -d -p 5000:5000 ai-threat-detection
+              aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
+              docker pull ${aws_ecr_repository.threat_detection.repository_url}:latest
+              docker run -d -p 5000:5000 ${aws_ecr_repository.threat_detection.repository_url}:latest
               EOF
 
   tags = {
@@ -156,5 +165,57 @@ resource "aws_security_group" "security_ai_sg" {
   tags = {
     Name = "security-ai-sg"
   }
+}
+
+resource "aws_ecr_repository" "threat_detection" {
+  name                 = "threat-detection"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_iam_role" "ec2_role" {
+  name = "threat-detection-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ec2_policy" {
+  name = "threat-detection-ec2-policy"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "threat-detection-ec2-profile"
+  role = aws_iam_role.ec2_role.name
 }
 
