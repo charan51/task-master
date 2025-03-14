@@ -5,6 +5,7 @@ provider "aws" {
 resource "aws_instance" "security_ai" {
   ami           = "ami-0735c191cf914754d" # Update with correct AMI ID
   instance_type = "t2.medium"
+  vpc_security_group_ids = [aws_security_group.security_ai_sg.id]
 
   user_data = <<-EOF
               #!/bin/bash
@@ -122,6 +123,38 @@ resource "aws_codebuild_project" "build" {
   source {
     type = "CODEPIPELINE"
     buildspec = "buildspec.yml"
+  }
+}
+
+resource "aws_security_group" "security_ai_sg" {
+  name        = "security-ai-sg"
+  description = "Security group for AI threat detection instance"
+
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow inbound traffic to AI service"
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow SSH access"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "security-ai-sg"
   }
 }
 
