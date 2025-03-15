@@ -19,19 +19,24 @@ resource "aws_instance" "security_ai" {
     Name = "Security-AI-Instance"
   }
 }
-# S3 bucket for pipeline artifacts
-resource "aws_s3_bucket" "codepipeline_bucket" {
-  bucket = "ai-threat-detection-pipeline-artifacts-${random_string.suffix.result}"
-}
 
+
+# Random string for unique naming
 resource "random_string" "suffix" {
   length  = 8
   special = false
+  upper   = false  # Ensure lowercase for S3 compatibility
 }
 
-# ECR Repository
+# S3 bucket for pipeline artifacts
+resource "aws_s3_bucket" "codepipeline_bucket" {
+  bucket = "ai-threat-detection-artifacts-${random_string.suffix.result}"
+  force_destroy = true  # Allows deletion even if not empty
+}
+
+# ECR Repository (with unique name to avoid conflict)
 resource "aws_ecr_repository" "ai_threat_repo" {
-  name                 = "ai-threat-detection"
+  name                 = "ai-threat-detection-${random_string.suffix.result}"  # Unique name
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -41,56 +46,76 @@ resource "aws_ecr_repository" "ai_threat_repo" {
 
 # IAM Role for CodePipeline
 resource "aws_iam_role" "codepipeline_role" {
-  name = "codepipeline-role"
+  name = "codepipeline-role-${random_string.suffix.result}"  # Unique name
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Principal = {
-          Service = "codepipeline.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "codepipeline.amazonaws.com" }
+        Action    = "sts:AssumeRole"
       }
     ]
   })
+}
 
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/AWSCodePipelineFullAccess",
-    "arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess",
-    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
-  ]
+# Policy attachments for CodePipeline role
+resource "aws_iam_role_policy_attachment" "codepipeline_full_access" {
+  role       = aws_iam_role.codepipeline_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess"  # Correct ARN
+}
+
+resource "aws_iam_role_policy_attachment" "codepipeline_s3" {
+  role       = aws_iam_role.codepipeline_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "codepipeline_ecr" {
+  role       = aws_iam_role.codepipeline_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "codepipeline_codebuild" {
+  role       = aws_iam_role.codepipeline_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess"
 }
 
 # IAM Role for CodeBuild
 resource "aws_iam_role" "codebuild_role" {
-  name = "codebuild-role"
+  name = "codebuild-role-${random_string.suffix.result}"  # Unique name
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Principal = {
-          Service = "codebuild.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "codebuild.amazonaws.com" }
+        Action    = "sts:AssumeRole"
       }
     ]
   })
+}
 
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess",
-    "arn:aws:iam::aws:policy/AmazonS3FullAccess",
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
-  ]
+# Policy attachments for CodeBuild role
+resource "aws_iam_role_policy_attachment" "codebuild_admin" {
+  role       = aws_iam_role.codebuild_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "codebuild_s3" {
+  role       = aws_iam_role.codebuild_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "codebuild_ecr" {
+  role       = aws_iam_role.codebuild_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
 }
 
 # CodeBuild Project
 resource "aws_codebuild_project" "ai_threat_build" {
-  name          = "ai-threat-detection-build"
+  name          = "ai-threat-detection-build-${random_string.suffix.result}"  # Unique name
   service_role  = aws_iam_role.codebuild_role.arn
 
   artifacts {
@@ -116,13 +141,13 @@ resource "aws_codebuild_project" "ai_threat_build" {
 
 # CodeStar Connection to GitHub
 resource "aws_codestarconnections_connection" "github_connection" {
-  name          = "github-connection"
+  name          = "github-connection-${random_string.suffix.result}"  # Unique name
   provider_type = "GitHub"
 }
 
 # CodePipeline
 resource "aws_codepipeline" "ai_threat_pipeline" {
-  name     = "ai-threat-detection-pipeline"
+  name     = "ai-threat-detection-pipeline-${random_string.suffix.result}"  # Unique name
   role_arn = aws_iam_role.codepipeline_role.arn
 
   artifact_store {
@@ -141,7 +166,7 @@ resource "aws_codepipeline" "ai_threat_pipeline" {
       output_artifacts = ["source_output"]
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github_connection.arn
-        FullRepositoryId = "charan51/task-master"  # Replace with your GitHub repo
+        FullRepositoryId = "your-username/ai-threat-detection"  # Replace with your GitHub repo
         BranchName       = "main"
       }
     }
@@ -161,6 +186,24 @@ resource "aws_codepipeline" "ai_threat_pipeline" {
         ProjectName = aws_codebuild_project.ai_threat_build.name
       }
     }
+  }
+}
+
+# EC2 Instance (optional, from your original setup)
+resource "aws_instance" "security_ai2" {
+  ami           = "ami-08b5b3a93ed654d19"  # Verify this AMI is valid
+  instance_type = "t2.medium"
+  user_data     = <<-EOF
+                  #!/bin/bash
+                  apt-get update -y
+                  apt-get install -y docker.io
+                  systemctl start docker
+                  systemctl enable docker
+                  docker run -d -p 5000:5000 ${aws_ecr_repository.ai_threat_repo.repository_url}:latest
+                  EOF
+
+  tags = {
+    Name = "Security-AI-Instance"
   }
 }
 
