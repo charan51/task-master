@@ -2,6 +2,10 @@ from flask import Flask, jsonify
 
 app = Flask(__name__)
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy"}), 200
+
 @app.route('/detect', methods=['GET'])
 def detect_threat():
     return jsonify({"message": "AI-powered threat detection is running on the cloud", "status": "safe"})
