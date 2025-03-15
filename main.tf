@@ -112,7 +112,7 @@ resource "aws_codepipeline" "ai_threat_detection_pipeline" {
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github.arn
         FullRepositoryId = "charan51/task-master"
-        BranchName      = "main"
+        BranchName      = "charan51/task-master"
       }
     }
   }
@@ -183,3 +183,38 @@ resource "aws_iam_role" "codebuild_role" {
   })
 }
 
+# Add CodeBuild IAM policy
+resource "aws_iam_role_policy" "codebuild_policy" {
+  name = "ai-threat-detection-codebuild-policy"
+  role = aws_iam_role.codebuild_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Resource = ["*"]
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage",
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:PutObject"
+        ]
+      }
+    ]
+  })
+}
