@@ -166,7 +166,7 @@ resource "aws_codepipeline" "ai_threat_pipeline" {
       output_artifacts = ["source_output"]
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github_connection.arn
-        FullRepositoryId = "your-username/ai-threat-detection"  # Replace with your GitHub repo
+        FullRepositoryId = "charan51/task-master"  # Replace with your GitHub repo
         BranchName       = "main"
       }
     }
