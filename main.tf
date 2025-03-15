@@ -119,7 +119,7 @@ resource "aws_codepipeline" "ai_threat_detection_pipeline" {
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github.arn
         FullRepositoryId = "charan51/task-master"
-        BranchName      = "task-master"
+        BranchName      = "main"
       }
     }
   }
