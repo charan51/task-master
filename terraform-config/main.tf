@@ -19,26 +19,23 @@ resource "aws_instance" "security_ai" {
     Name = "Security-AI-Instance"
   }
 }
-
-
 # Random string for unique naming
 resource "random_string" "suffix" {
   length  = 8
   special = false
-  upper   = false  # Ensure lowercase for S3 compatibility
+  upper   = false
 }
 
 # S3 bucket for pipeline artifacts
 resource "aws_s3_bucket" "codepipeline_bucket" {
-  bucket = "ai-threat-detection-artifacts-${random_string.suffix.result}"
-  force_destroy = true  # Allows deletion even if not empty
+  bucket        = "ai-threat-detection-artifacts-${random_string.suffix.result}"
+  force_destroy = true
 }
 
-# ECR Repository (with unique name to avoid conflict)
+# ECR Repository
 resource "aws_ecr_repository" "ai_threat_repo" {
-  name                 = "ai-threat-detection-${random_string.suffix.result}"  # Unique name
+  name                 = "ai-threat-detection-${random_string.suffix.result}"
   image_tag_mutability = "MUTABLE"
-
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -46,8 +43,7 @@ resource "aws_ecr_repository" "ai_threat_repo" {
 
 # IAM Role for CodePipeline
 resource "aws_iam_role" "codepipeline_role" {
-  name = "codepipeline-role-${random_string.suffix.result}"  # Unique name
-
+  name = "codepipeline-role-${random_string.suffix.result}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -60,10 +56,9 @@ resource "aws_iam_role" "codepipeline_role" {
   })
 }
 
-# Policy attachments for CodePipeline role
 resource "aws_iam_role_policy_attachment" "codepipeline_full_access" {
   role       = aws_iam_role.codepipeline_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess"  # Correct ARN
+  policy_arn = "arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess"
 }
 
 resource "aws_iam_role_policy_attachment" "codepipeline_s3" {
@@ -81,10 +76,24 @@ resource "aws_iam_role_policy_attachment" "codepipeline_codebuild" {
   policy_arn = "arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess"
 }
 
+resource "aws_iam_role_policy" "codepipeline_codestar" {
+  name   = "codepipeline-codestar-policy"
+  role   = aws_iam_role.codepipeline_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["codestar-connections:UseConnection"]
+        Resource = aws_codestarconnections_connection.github_connection.arn
+      }
+    ]
+  })
+}
+
 # IAM Role for CodeBuild
 resource "aws_iam_role" "codebuild_role" {
-  name = "codebuild-role-${random_string.suffix.result}"  # Unique name
-
+  name = "codebuild-role-${random_string.suffix.result}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -97,7 +106,6 @@ resource "aws_iam_role" "codebuild_role" {
   })
 }
 
-# Policy attachments for CodeBuild role
 resource "aws_iam_role_policy_attachment" "codebuild_admin" {
   role       = aws_iam_role.codebuild_role.name
   policy_arn = "arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess"
@@ -115,13 +123,11 @@ resource "aws_iam_role_policy_attachment" "codebuild_ecr" {
 
 # CodeBuild Project
 resource "aws_codebuild_project" "ai_threat_build" {
-  name          = "ai-threat-detection-build-${random_string.suffix.result}"  # Unique name
+  name          = "ai-threat-detection-build-${random_string.suffix.result}"
   service_role  = aws_iam_role.codebuild_role.arn
-
   artifacts {
     type = "CODEPIPELINE"
   }
-
   environment {
     compute_type    = "BUILD_GENERAL1_SMALL"
     image           = "aws/codebuild/standard:5.0"
@@ -132,7 +138,6 @@ resource "aws_codebuild_project" "ai_threat_build" {
       value = aws_ecr_repository.ai_threat_repo.repository_url
     }
   }
-
   source {
     type      = "CODEPIPELINE"
     buildspec = "buildspec.yml"
@@ -141,20 +146,18 @@ resource "aws_codebuild_project" "ai_threat_build" {
 
 # CodeStar Connection to GitHub
 resource "aws_codestarconnections_connection" "github_connection" {
-  name          = "github-connection-${random_string.suffix.result}"  # Unique name
+  name          = "github-connection-${random_string.suffix.result}"
   provider_type = "GitHub"
 }
 
 # CodePipeline
 resource "aws_codepipeline" "ai_threat_pipeline" {
-  name     = "ai-threat-detection-pipeline-${random_string.suffix.result}"  # Unique name
+  name     = "ai-threat-detection-pipeline-${random_string.suffix.result}"
   role_arn = aws_iam_role.codepipeline_role.arn
-
   artifact_store {
     location = aws_s3_bucket.codepipeline_bucket.bucket
     type     = "S3"
   }
-
   stage {
     name = "Source"
     action {
@@ -166,12 +169,11 @@ resource "aws_codepipeline" "ai_threat_pipeline" {
       output_artifacts = ["source_output"]
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github_connection.arn
-        FullRepositoryId = "charan51/task-master"  # Replace with your GitHub repo
+        FullRepositoryId = "charan51/task-master"
         BranchName       = "main"
       }
     }
   }
-
   stage {
     name = "Build"
     action {
@@ -189,21 +191,46 @@ resource "aws_codepipeline" "ai_threat_pipeline" {
   }
 }
 
-# EC2 Instance (optional, from your original setup)
-resource "aws_instance" "security_ai2" {
-  ami           = "ami-08b5b3a93ed654d19"  # Verify this AMI is valid
-  instance_type = "t2.medium"
-  user_data     = <<-EOF
-                  #!/bin/bash
-                  apt-get update -y
-                  apt-get install -y docker.io
-                  systemctl start docker
-                  systemctl enable docker
-                  docker run -d -p 5000:5000 ${aws_ecr_repository.ai_threat_repo.repository_url}:latest
-                  EOF
+# Security Group for EC2
+resource "aws_security_group" "security_ai_sg" {
+  name        = "security-ai-sg-${random_string.suffix.result}"
+  description = "Allow SSH and port 5000"
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
+  }
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # Restrict to your IP in production
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
+# EC2 Instance with New Name
+resource "aws_instance" "security_ai_new" {
+  ami                    = "ami-08b5b3a93ed654d19"  # Amazon Linux 2 AMI
+  instance_type          = "t2.medium"
+  vpc_security_group_ids = [aws_security_group.security_ai_sg.id]
+  user_data              = <<-EOF
+                          #!/bin/bash
+                          yum update -y
+                          yum install -y docker
+                          systemctl start docker
+                          systemctl enable docker
+                          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${aws_ecr_repository.ai_threat_repo.repository_url}
+                          docker run -d -p 5000:5000 ${aws_ecr_repository.ai_threat_repo.repository_url}:latest
+                          EOF
   tags = {
-    Name = "Security-AI-Instance"
+    Name = "Security-AI-Instance-New"
   }
 }
 
@@ -218,4 +245,8 @@ output "codestar_connection_arn" {
 
 output "ecr_repository_url" {
   value = aws_ecr_repository.ai_threat_repo.repository_url
+}
+
+output "ec2_public_ip" {
+  value = aws_instance.security_ai_new.public_ip  # Updated to reference new name
 }
