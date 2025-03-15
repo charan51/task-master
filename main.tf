@@ -7,6 +7,7 @@ variable "aws_region" {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 resource "aws_instance" "security_ai" {
   ami           = "ami-0735c191cf914754d" # Update with correct AMI ID
@@ -16,13 +17,97 @@ resource "aws_instance" "security_ai" {
 
   user_data = <<-EOF
               #!/bin/bash
+              set -e
+              set -x
+
+              # Check available disk space
+              df -h / || echo "Warning: Could not check disk space"
+              
+              # Check available memory
+              free -h || echo "Warning: Could not check memory"
+
+              # Update and install dependencies
               apt-get update -y
-              apt-get install -y docker.io awscli
+              apt-get install -y \
+                apt-transport-https \
+                ca-certificates \
+                curl \
+                gnupg \
+                lsb-release \
+                awscli \
+                jq
+
+              # Add Docker's official GPG key
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+              # Set up Docker repository
+              echo \
+                "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+                $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+              # Install Docker Engine
+              apt-get update -y
+              apt-get install -y docker-ce docker-ce-cli containerd.io
+
+              # Start Docker service
               systemctl start docker
               systemctl enable docker
-              aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
-              docker pull ${aws_ecr_repository.threat_detection.repository_url}:latest
-              docker run -d -p 5000:5000 ${aws_ecr_repository.threat_detection.repository_url}:latest
+
+              # Verify Docker is running
+              echo "Waiting for Docker to start..."
+              for i in {1..30}; do
+                if systemctl is-active --quiet docker; then
+                  echo "Docker is running"
+                  break
+                fi
+                if [ $i -eq 30 ]; then
+                  echo "Docker failed to start"
+                  exit 1
+                fi
+                echo "Waiting for Docker to start (attempt $i/30)..."
+                sleep 2
+              done
+
+              # Verify Docker works
+              docker run --rm hello-world || {
+                echo "Docker test failed"
+                systemctl status docker
+                journalctl -xe --no-pager | tail -n 50
+                exit 1
+              }
+
+              # Get AWS region and account ID
+              AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+              AWS_ACCOUNT_ID=$(curl -s http://169.254.169.254/latest/meta-data/identity-credentials/ec2/info | grep -o '"accountId" *: *"[^"]*"' | cut -d'"' -f4)
+              REPOSITORY_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/threat-detection"
+
+              # Login to ECR
+              echo "Logging into ECR..."
+              aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REPOSITORY_URI
+
+              # Pull and run the container
+              echo "Pulling container image..."
+              docker pull $REPOSITORY_URI:latest
+
+              echo "Running container..."
+              docker run -d --name threat-detection \
+                --restart always \
+                -p 5000:5000 \
+                $REPOSITORY_URI:latest
+
+              # Check if container is running
+              echo "Verifying container is running..."
+              sleep 5  # Give the container a moment to start
+              if [ "$(docker ps -q -f name=threat-detection)" ]; then
+                  echo "Container started successfully"
+                  docker ps
+                  docker logs threat-detection
+              else
+                  echo "Container failed to start"
+                  docker ps -a
+                  docker logs threat-detection
+                  exit 1
+              fi
               EOF
 
   tags = {
