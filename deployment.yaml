@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
         - name: ai-threat-detection
-          image: ai-threat-detection
+          image: 418295714127.dkr.ecr.us-east-1.amazonaws.com/ai-threat-detection:latest
           ports:
             - containerPort: 5000
+          imagePullPolicy: Always
 
